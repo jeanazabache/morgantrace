@@ -1,0 +1,23 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# MorganTrace — Servicio Kubernetes
+# Expone la API dentro y fuera del cluster k3d
+# Autor: Jean Pierre Azabache
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: morgantrace-service
+  namespace: default
+  labels:
+    app: morgantrace
+spec:
+  # NodePort permite acceder desde fuera del cluster k3d
+  type: NodePort
+  selector:
+    app: morgantrace
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80          # Puerto del servicio dentro del cluster
+      targetPort: 8000  # Puerto del contenedor
+      nodePort: 30080   # Puerto accesible desde el host (localhost:30080)

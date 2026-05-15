@@ -1,0 +1,49 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# MorganTrace — Horizontal Pod Autoscaler (HPA)
+# Escala automáticamente entre 2 y 10 réplicas según carga de CPU/memoria
+# Autor: Jean Pierre Azabache
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: morgantrace-hpa
+  namespace: default
+  labels:
+    app: morgantrace
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: morgantrace-api
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    # Escalar cuando CPU promedio supere 70%
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    # Escalar también por memoria (umbral 80%)
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleUp:
+      # Respuesta rápida ante picos de tráfico
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 60
+    scaleDown:
+      # Reducción conservadora para evitar flapping
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 25
+          periodSeconds: 120
