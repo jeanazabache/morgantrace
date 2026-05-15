@@ -1,0 +1,47 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# MorganTrace — Docker Compose
+# Orquestación local para desarrollo y pruebas
+# Autor: Jean Pierre Azabache
+# ─────────────────────────────────────────────────────────────────────────────
+version: "3.9"
+
+services:
+  morgantrace-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: morgantrace-api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./src/models:/app/src/models
+    environment:
+      - MODEL_PATH=src/models/model.pkl
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  mlflow:
+    image: python:3.11-slim
+    container_name: morgantrace-mlflow
+    command: >
+      bash -c "pip install mlflow --quiet &&
+               mlflow server
+               --host 0.0.0.0
+               --port 5000
+               --backend-store-uri sqlite:///mlflow.db
+               --default-artifact-root /mlflow/artifacts"
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlflow_data:/mlflow
+    restart: unless-stopped
+
+volumes:
+  mlflow_data:
+    driver: local
