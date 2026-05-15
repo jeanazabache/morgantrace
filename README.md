@@ -205,5 +205,5 @@ pytest tests/ --cov=src --cov-report=html
 ---
 
 <div align="center">
-Desarrollado por <strong>Jean Pierre Azabache</strong> · <a href="https://github.com/jeanazabache">github.com/jeanazabache</a>
+Desarrollado por <strong>Jean Pierre Azabache Medina</strong> · <a href="https://github.com/jeanazabache">github.com/jeanazabache</a>
 </div>
