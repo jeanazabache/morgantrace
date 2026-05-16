@@ -7,9 +7,10 @@
 MorganTrace: API en tiempo real para detección de fraude financiero.
 
 Endpoints:
-    GET  /health  → Estado de salud del servicio (liveness probe)
-    POST /predict → Predicción de fraude para una transacción
-    GET  /info    → Información sobre el modelo cargado
+    GET  /health         → Estado de salud del servicio (liveness probe)
+    POST /predict        → Predicción de fraude para una transacción
+    POST /predict/batch  → Predicción de fraude para múltiples transacciones
+    GET  /info           → Información sobre el modelo cargado
 """
 
 import os
@@ -17,7 +18,7 @@ import time
 import logging
 from pathlib import Path
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import List, Optional
 
 import joblib
 import numpy as np
@@ -148,6 +149,49 @@ class EstadoSalud(BaseModel):
     version_api: str
 
 
+class SolicitudBatch(BaseModel):
+    """Cuerpo de entrada para el endpoint /predict/batch."""
+
+    transacciones: List[TransaccionEntrada] = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description="Lista de transacciones a evaluar (máximo 500 por llamada)",
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "transacciones": [
+                    {
+                        "monto_transaccion": 150.75,
+                        "delta_tiempo": 86400.0,
+                        "tipo_tarjeta": "credit",
+                        "banco_emisor": "discover",
+                        "v14": -0.4,
+                    },
+                    {
+                        "monto_transaccion": 9999.99,
+                        "delta_tiempo": 120.0,
+                        "tipo_tarjeta": "credit",
+                        "banco_emisor": "visa",
+                        "v14": -5.2,
+                    },
+                ]
+            }
+        }
+
+
+class ResultadoBatch(BaseModel):
+    """Respuesta del endpoint /predict/batch."""
+
+    total_transacciones: int = Field(..., description="Número de transacciones evaluadas")
+    total_fraudes: int = Field(..., description="Número de transacciones marcadas como fraude")
+    porcentaje_fraude: float = Field(..., description="Porcentaje de fraude en el lote (%)")
+    tiempo_total_ms: float = Field(..., description="Tiempo total de inferencia del lote en ms")
+    resultados: List[ResultadoPrediccion] = Field(..., description="Resultado individual por transacción")
+
+
 # ── Funciones auxiliares ──────────────────────────────────────────────────────
 def calcular_nivel_riesgo(probabilidad: float) -> str:
     """
@@ -244,6 +288,85 @@ async def predecir_fraude(transaccion: TransaccionEntrada):
         confianza_modelo=round(confianza, 6),
         tiempo_inferencia_ms=round(tiempo_ms, 3),
         mensaje=mensaje,
+    )
+
+
+@app.post(
+    "/predict/batch",
+    response_model=ResultadoBatch,
+    summary="Predecir fraude en múltiples transacciones",
+    tags=["Predicción"],
+)
+async def predecir_fraude_batch(solicitud: SolicitudBatch):
+    """
+    Analiza un lote de transacciones financieras en una sola llamada.
+
+    Útil para procesar múltiples transacciones de forma eficiente,
+    como en revisiones periódicas o cierres de turno bancario.
+
+    **Límite:** máximo 500 transacciones por llamada.
+
+    **Respuesta incluye:**
+    - Resultado individual de cada transacción
+    - Resumen del lote: total de fraudes y porcentaje
+    """
+    if estado["modelo"] is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Modelo no disponible. Ejecuta el notebook 03_modeling.ipynb.",
+        )
+
+    inicio_total = time.perf_counter()
+    resultados: List[ResultadoPrediccion] = []
+
+    try:
+        # Construir matriz de features para todas las transacciones de una vez
+        X = np.vstack([preparar_caracteristicas(t) for t in solicitud.transacciones])
+        predicciones = estado["modelo"].predict(X)
+        probabilidades = estado["modelo"].predict_proba(X)
+    except Exception as e:
+        logger.error(f"Error en inferencia batch: {e}")
+        raise HTTPException(status_code=500, detail=f"Error en predicción batch: {str(e)}")
+
+    for i, transaccion in enumerate(solicitud.transacciones):
+        inicio_item = time.perf_counter()
+        prob_fraude = float(probabilidades[i][1])
+        es_fraude = bool(predicciones[i] == 1)
+        nivel_riesgo = calcular_nivel_riesgo(prob_fraude)
+        confianza = float(max(probabilidades[i]))
+        tiempo_item_ms = (time.perf_counter() - inicio_item) * 1000
+
+        mensaje = (
+            f"⚠️ ALERTA: Transacción sospechosa (riesgo {nivel_riesgo})"
+            if es_fraude
+            else f"✅ Transacción legítima (riesgo {nivel_riesgo})"
+        )
+        resultados.append(
+            ResultadoPrediccion(
+                es_fraude=es_fraude,
+                probabilidad_fraude=round(prob_fraude, 6),
+                nivel_riesgo=nivel_riesgo,
+                confianza_modelo=round(confianza, 6),
+                tiempo_inferencia_ms=round(tiempo_item_ms, 3),
+                mensaje=mensaje,
+            )
+        )
+
+    tiempo_total_ms = (time.perf_counter() - inicio_total) * 1000
+    total_fraudes = sum(1 for r in resultados if r.es_fraude)
+    porcentaje = round(total_fraudes / len(resultados) * 100, 2)
+
+    logger.info(
+        f"Batch | transacciones={len(resultados)} | fraudes={total_fraudes} "
+        f"({porcentaje}%) | {tiempo_total_ms:.1f}ms total"
+    )
+
+    return ResultadoBatch(
+        total_transacciones=len(resultados),
+        total_fraudes=total_fraudes,
+        porcentaje_fraude=porcentaje,
+        tiempo_total_ms=round(tiempo_total_ms, 3),
+        resultados=resultados,
     )
 
 

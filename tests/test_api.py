@@ -74,6 +74,52 @@ class TestEndpointPredict:
         assert respuesta.status_code in [200, 503]
 
 
+class TestEndpointPredictBatch:
+    """Tests del endpoint POST /predict/batch."""
+
+    TRANSACCION_VALIDA = {
+        "monto_transaccion": 150.75,
+        "delta_tiempo": 86400.0,
+        "tipo_tarjeta": "credit",
+        "banco_emisor": "discover",
+        "tipo_dispositivo": "desktop",
+        "v1": -1.2, "v14": -0.4,
+    }
+
+    def test_batch_sin_modelo_retorna_503(self):
+        """Sin modelo cargado, /predict/batch debe retornar 503."""
+        payload = {"transacciones": [self.TRANSACCION_VALIDA, self.TRANSACCION_VALIDA]}
+        respuesta = cliente.post("/predict/batch", json=payload)
+        assert respuesta.status_code == 503
+
+    def test_batch_lista_vacia_retorna_422(self):
+        """Lista vacía debe fallar la validación (mínimo 1 transacción)."""
+        respuesta = cliente.post("/predict/batch", json={"transacciones": []})
+        assert respuesta.status_code == 422
+
+    def test_batch_transaccion_invalida_retorna_422(self):
+        """Transacción con monto negativo dentro del lote debe fallar."""
+        transaccion_mala = {**self.TRANSACCION_VALIDA, "monto_transaccion": -50.0}
+        payload = {"transacciones": [self.TRANSACCION_VALIDA, transaccion_mala]}
+        respuesta = cliente.post("/predict/batch", json=payload)
+        assert respuesta.status_code == 422
+
+    def test_batch_estructura_respuesta_sin_modelo(self):
+        """La respuesta de error 503 debe incluir el campo 'detail'."""
+        payload = {"transacciones": [self.TRANSACCION_VALIDA]}
+        respuesta = cliente.post("/predict/batch", json=payload)
+        assert respuesta.status_code == 503
+        assert "detail" in respuesta.json()
+
+    def test_batch_acepta_multiples_transacciones(self):
+        """El endpoint debe aceptar un lote de varias transacciones."""
+        lote = [self.TRANSACCION_VALIDA] * 5
+        payload = {"transacciones": lote}
+        respuesta = cliente.post("/predict/batch", json=payload)
+        # Sin modelo retorna 503, con modelo retorna 200
+        assert respuesta.status_code in [200, 503]
+
+
 class TestEndpointInfo:
     """Tests del endpoint GET /info."""
 
