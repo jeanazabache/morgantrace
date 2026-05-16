@@ -26,6 +26,8 @@ from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
 
+from src.api.audit_logger import registrar_prediccion
+
 # ── Configuración del logger ──────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
@@ -281,6 +283,16 @@ async def predecir_fraude(transaccion: TransaccionEntrada):
 
     logger.info(f"Predicción | fraude={es_fraude} | prob={prob_fraude:.4f} | {nivel_riesgo} | {tiempo_ms:.1f}ms")
 
+    registrar_prediccion(
+        endpoint="/predict",
+        monto_transaccion=transaccion.monto_transaccion,
+        nivel_riesgo=nivel_riesgo,
+        es_fraude=es_fraude,
+        probabilidad_fraude=round(prob_fraude, 6),
+        confianza_modelo=round(confianza, 6),
+        tiempo_inferencia_ms=round(tiempo_ms, 3),
+    )
+
     return ResultadoPrediccion(
         es_fraude=es_fraude,
         probabilidad_fraude=round(prob_fraude, 6),
@@ -359,6 +371,25 @@ async def predecir_fraude_batch(solicitud: SolicitudBatch):
     logger.info(
         f"Batch | transacciones={len(resultados)} | fraudes={total_fraudes} "
         f"({porcentaje}%) | {tiempo_total_ms:.1f}ms total"
+    )
+
+    # Registrar un único evento de auditoría por lote con el promedio del monto
+    monto_promedio = round(
+        sum(t.monto_transaccion for t in solicitud.transacciones) / len(solicitud.transacciones), 2
+    )
+    registrar_prediccion(
+        endpoint="/predict/batch",
+        monto_transaccion=monto_promedio,
+        nivel_riesgo="ALTO" if total_fraudes > 0 else "BAJO",
+        es_fraude=total_fraudes > 0,
+        probabilidad_fraude=round(
+            sum(r.probabilidad_fraude for r in resultados) / len(resultados), 6
+        ),
+        confianza_modelo=round(
+            sum(r.confianza_modelo for r in resultados) / len(resultados), 6
+        ),
+        tiempo_inferencia_ms=round(tiempo_total_ms, 3),
+        lote_size=len(resultados),
     )
 
     return ResultadoBatch(

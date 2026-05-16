@@ -8,9 +8,13 @@ Tests unitarios e integración para la API de MorganTrace.
 Ejecutar con: pytest tests/ -v
 """
 
+import json
+import os
 import pytest
+from pathlib import Path
 from fastapi.testclient import TestClient
 from src.api.main import app
+from src.api import audit_logger
 
 cliente = TestClient(app)
 
@@ -118,6 +122,90 @@ class TestEndpointPredictBatch:
         respuesta = cliente.post("/predict/batch", json=payload)
         # Sin modelo retorna 503, con modelo retorna 200
         assert respuesta.status_code in [200, 503]
+
+
+class TestAuditLogger:
+    """Tests del módulo de logging de auditoría."""
+
+    def test_registrar_prediccion_crea_archivo(self, tmp_path, monkeypatch):
+        """Debe crear el archivo JSONL al registrar la primera predicción."""
+        ruta_log = tmp_path / "test_predicciones.jsonl"
+        monkeypatch.setattr(audit_logger, "RUTA_LOG", ruta_log)
+
+        audit_logger.registrar_prediccion(
+            endpoint="/predict",
+            monto_transaccion=150.75,
+            nivel_riesgo="BAJO",
+            es_fraude=False,
+            probabilidad_fraude=0.023,
+            confianza_modelo=0.977,
+            tiempo_inferencia_ms=2.5,
+        )
+
+        assert ruta_log.exists()
+
+    def test_registro_contiene_campos_correctos(self, tmp_path, monkeypatch):
+        """Cada línea del JSONL debe contener los campos de auditoría."""
+        ruta_log = tmp_path / "test_predicciones.jsonl"
+        monkeypatch.setattr(audit_logger, "RUTA_LOG", ruta_log)
+
+        audit_logger.registrar_prediccion(
+            endpoint="/predict",
+            monto_transaccion=500.0,
+            nivel_riesgo="ALTO",
+            es_fraude=True,
+            probabilidad_fraude=0.85,
+            confianza_modelo=0.85,
+            tiempo_inferencia_ms=3.1,
+        )
+
+        linea = json.loads(ruta_log.read_text(encoding="utf-8").strip())
+        assert linea["endpoint"] == "/predict"
+        assert linea["monto_transaccion"] == 500.0
+        assert linea["es_fraude"] is True
+        assert linea["nivel_riesgo"] == "ALTO"
+        assert "timestamp" in linea
+
+    def test_multiples_registros_en_una_linea_cada_uno(self, tmp_path, monkeypatch):
+        """Cada predicción debe ser una línea independiente en el JSONL."""
+        ruta_log = tmp_path / "test_predicciones.jsonl"
+        monkeypatch.setattr(audit_logger, "RUTA_LOG", ruta_log)
+
+        for _ in range(3):
+            audit_logger.registrar_prediccion(
+                endpoint="/predict",
+                monto_transaccion=100.0,
+                nivel_riesgo="BAJO",
+                es_fraude=False,
+                probabilidad_fraude=0.05,
+                confianza_modelo=0.95,
+                tiempo_inferencia_ms=1.0,
+            )
+
+        lineas = ruta_log.read_text(encoding="utf-8").strip().splitlines()
+        assert len(lineas) == 3
+        for linea in lineas:
+            json.loads(linea)  # Cada línea debe ser JSON válido
+
+    def test_registro_batch_incluye_lote_size(self, tmp_path, monkeypatch):
+        """Los registros batch deben incluir el campo 'lote_size'."""
+        ruta_log = tmp_path / "test_predicciones.jsonl"
+        monkeypatch.setattr(audit_logger, "RUTA_LOG", ruta_log)
+
+        audit_logger.registrar_prediccion(
+            endpoint="/predict/batch",
+            monto_transaccion=300.0,
+            nivel_riesgo="BAJO",
+            es_fraude=False,
+            probabilidad_fraude=0.1,
+            confianza_modelo=0.9,
+            tiempo_inferencia_ms=10.0,
+            lote_size=50,
+        )
+
+        linea = json.loads(ruta_log.read_text(encoding="utf-8").strip())
+        assert linea["lote_size"] == 50
+        assert linea["endpoint"] == "/predict/batch"
 
 
 class TestEndpointInfo:
