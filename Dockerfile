@@ -25,12 +25,21 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copiar código fuente
 COPY src/ ./src/
 
-RUN mkdir -p src/models
+# Crear directorios necesarios y usuario no-root (buena práctica de seguridad)
+RUN mkdir -p src/models logs && \
+    addgroup --system appgroup && \
+    adduser --system --ingroup appgroup appuser && \
+    chown -R appuser:appgroup /app
+
+USER appuser
 
 EXPOSE 8000
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV MODEL_PATH=src/models/model.pkl
+ENV AUDIT_LOG_PATH=logs/predicciones.jsonl
 
-CMD ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+# Un solo worker: el modelo se carga una vez en memoria.
+# El escalado horizontal lo maneja Kubernetes (HPA).
+CMD ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

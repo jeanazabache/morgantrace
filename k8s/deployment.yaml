@@ -21,6 +21,12 @@ spec:
         app: morgantrace
         version: "1.0.0"
     spec:
+      # Ejecutar como usuario no-root (consistente con el Dockerfile)
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+
       containers:
         - name: morgantrace-api
           # Imagen cargada en el registro local de k3d
@@ -32,8 +38,13 @@ spec:
           env:
             - name: MODEL_PATH
               value: "src/models/model.pkl"
+            - name: AUDIT_LOG_PATH
+              value: "logs/predicciones.jsonl"
             - name: PYTHONUNBUFFERED
               value: "1"
+          volumeMounts:
+            - name: audit-logs
+              mountPath: /app/logs
           # Sondas de salud para Kubernetes
           livenessProbe:
             httpGet:
@@ -57,3 +68,7 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "500m"
+
+      volumes:
+        - name: audit-logs
+          emptyDir: {}   # En producción real: usar PersistentVolumeClaim

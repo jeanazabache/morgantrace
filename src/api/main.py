@@ -24,7 +24,7 @@ import joblib
 import numpy as np
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from src.api.audit_logger import registrar_prediccion
 
@@ -93,15 +93,25 @@ app.add_middleware(
 class TransaccionEntrada(BaseModel):
     """Datos de entrada para la predicción de fraude."""
 
-    monto_transaccion: float = Field(
-        ..., gt=0, description="Monto de la transacción en USD", example=150.75
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "monto_transaccion": 150.75,
+                "delta_tiempo": 86400.0,
+                "tipo_tarjeta": "credit",
+                "banco_emisor": "discover",
+                "tipo_dispositivo": "desktop",
+                "v1": -1.2, "v2": 0.5, "v3": 2.1, "v4": -0.8,
+                "v12": 1.3, "v14": -0.4, "v17": 0.9,
+            }
+        }
     )
-    delta_tiempo: float = Field(
-        ..., ge=0, description="Segundos desde la primera transacción del dataset", example=86400.0
-    )
-    tipo_tarjeta: Optional[str] = Field(None, description="'credit' o 'debit'", example="credit")
-    banco_emisor: Optional[str] = Field(None, description="Banco emisor", example="discover")
-    tipo_dispositivo: Optional[str] = Field(None, description="desktop/mobile/tablet", example="desktop")
+
+    monto_transaccion: float = Field(..., gt=0, description="Monto de la transacción en USD")
+    delta_tiempo: float = Field(..., ge=0, description="Segundos desde la primera transacción del dataset")
+    tipo_tarjeta: Optional[str] = Field(None, description="'credit' o 'debit'")
+    banco_emisor: Optional[str] = Field(None, description="Banco emisor")
+    tipo_dispositivo: Optional[str] = Field(None, description="desktop / mobile / tablet")
     v1: Optional[float] = Field(None, description="Feature V1 IEEE-CIS")
     v2: Optional[float] = Field(None, description="Feature V2 IEEE-CIS")
     v3: Optional[float] = Field(None, description="Feature V3 IEEE-CIS")
@@ -116,19 +126,6 @@ class TransaccionEntrada(BaseModel):
         if v > 20_000:
             raise ValueError("Monto excede el límite de $20,000 para este modelo")
         return round(v, 2)
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "monto_transaccion": 150.75,
-                "delta_tiempo": 86400.0,
-                "tipo_tarjeta": "credit",
-                "banco_emisor": "discover",
-                "tipo_dispositivo": "desktop",
-                "v1": -1.2, "v2": 0.5, "v3": 2.1, "v4": -0.8,
-                "v12": 1.3, "v14": -0.4, "v17": 0.9,
-            }
-        }
 
 
 class ResultadoPrediccion(BaseModel):
@@ -154,15 +151,8 @@ class EstadoSalud(BaseModel):
 class SolicitudBatch(BaseModel):
     """Cuerpo de entrada para el endpoint /predict/batch."""
 
-    transacciones: List[TransaccionEntrada] = Field(
-        ...,
-        min_length=1,
-        max_length=500,
-        description="Lista de transacciones a evaluar (máximo 500 por llamada)",
-    )
-
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "transacciones": [
                     {
@@ -182,6 +172,14 @@ class SolicitudBatch(BaseModel):
                 ]
             }
         }
+    )
+
+    transacciones: List[TransaccionEntrada] = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description="Lista de transacciones a evaluar (máximo 500 por llamada)",
+    )
 
 
 class ResultadoBatch(BaseModel):
@@ -332,21 +330,24 @@ async def predecir_fraude_batch(solicitud: SolicitudBatch):
     resultados: List[ResultadoPrediccion] = []
 
     try:
-        # Construir matriz de features para todas las transacciones de una vez
+        # Construir matriz de features y ejecutar inferencia vectorizada de una sola vez
         X = np.vstack([preparar_caracteristicas(t) for t in solicitud.transacciones])
+        inicio_inferencia = time.perf_counter()
         predicciones = estado["modelo"].predict(X)
         probabilidades = estado["modelo"].predict_proba(X)
+        tiempo_inferencia_ms = (time.perf_counter() - inicio_inferencia) * 1000
     except Exception as e:
         logger.error(f"Error en inferencia batch: {e}")
         raise HTTPException(status_code=500, detail=f"Error en predicción batch: {str(e)}")
 
-    for i, transaccion in enumerate(solicitud.transacciones):
-        inicio_item = time.perf_counter()
+    # Distribuir el tiempo de inferencia proporcionalmente entre cada transacción
+    tiempo_por_item_ms = round(tiempo_inferencia_ms / len(solicitud.transacciones), 3)
+
+    for i in range(len(solicitud.transacciones)):
         prob_fraude = float(probabilidades[i][1])
         es_fraude = bool(predicciones[i] == 1)
         nivel_riesgo = calcular_nivel_riesgo(prob_fraude)
         confianza = float(max(probabilidades[i]))
-        tiempo_item_ms = (time.perf_counter() - inicio_item) * 1000
 
         mensaje = (
             f"⚠️ ALERTA: Transacción sospechosa (riesgo {nivel_riesgo})"
@@ -359,7 +360,7 @@ async def predecir_fraude_batch(solicitud: SolicitudBatch):
                 probabilidad_fraude=round(prob_fraude, 6),
                 nivel_riesgo=nivel_riesgo,
                 confianza_modelo=round(confianza, 6),
-                tiempo_inferencia_ms=round(tiempo_item_ms, 3),
+                tiempo_inferencia_ms=tiempo_por_item_ms,
                 mensaje=mensaje,
             )
         )
@@ -373,18 +374,17 @@ async def predecir_fraude_batch(solicitud: SolicitudBatch):
         f"({porcentaje}%) | {tiempo_total_ms:.1f}ms total"
     )
 
-    # Registrar un único evento de auditoría por lote con el promedio del monto
+    # Auditoría: registrar un evento por lote usando el mayor riesgo encontrado
+    max_prob_lote = max(r.probabilidad_fraude for r in resultados)
     monto_promedio = round(
         sum(t.monto_transaccion for t in solicitud.transacciones) / len(solicitud.transacciones), 2
     )
     registrar_prediccion(
         endpoint="/predict/batch",
         monto_transaccion=monto_promedio,
-        nivel_riesgo="ALTO" if total_fraudes > 0 else "BAJO",
+        nivel_riesgo=calcular_nivel_riesgo(max_prob_lote),
         es_fraude=total_fraudes > 0,
-        probabilidad_fraude=round(
-            sum(r.probabilidad_fraude for r in resultados) / len(resultados), 6
-        ),
+        probabilidad_fraude=round(max_prob_lote, 6),
         confianza_modelo=round(
             sum(r.confianza_modelo for r in resultados) / len(resultados), 6
         ),
