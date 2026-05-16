@@ -1,0 +1,15 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Grafana — Dashboard provider (auto-provisionado)
+# Carga los dashboards desde la carpeta /var/lib/grafana/dashboards al iniciar.
+# ─────────────────────────────────────────────────────────────────────────────
+
+apiVersion: 1
+
+providers:
+  - name: MorganTrace
+    orgId: 1
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards

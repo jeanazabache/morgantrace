@@ -25,8 +25,22 @@ import numpy as np
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from prometheus_fastapi_instrumentator import Instrumentator
+from prometheus_client import Counter
 
 from src.api.audit_logger import registrar_prediccion
+
+# ── Métricas de negocio (Prometheus) ─────────────────────────────────────────
+# Estas métricas van más allá de las HTTP estándar: capturan lógica de fraude.
+PREDICCIONES_TOTAL = Counter(
+    "morgantrace_predicciones_total",
+    "Total de transacciones analizadas por el modelo",
+    ["endpoint", "nivel_riesgo"],
+)
+FRAUDES_DETECTADOS_TOTAL = Counter(
+    "morgantrace_fraudes_detectados_total",
+    "Total de transacciones clasificadas como fraude",
+)
 
 # ── Configuración del logger ──────────────────────────────────────────────────
 logging.basicConfig(
@@ -79,6 +93,14 @@ app = FastAPI(
     },
     lifespan=lifespan,
 )
+
+# Instrumentación automática: expone /metrics con métricas HTTP estándar
+# (latencia, conteo de requests, códigos de respuesta, tamaño de payload)
+Instrumentator(
+    should_group_status_codes=False,
+    should_ignore_untemplated=True,
+    excluded_handlers=["/metrics", "/health"],
+).instrument(app).expose(app, include_in_schema=False)
 
 app.add_middleware(
     CORSMiddleware,
@@ -291,6 +313,10 @@ async def predecir_fraude(transaccion: TransaccionEntrada):
         tiempo_inferencia_ms=round(tiempo_ms, 3),
     )
 
+    PREDICCIONES_TOTAL.labels(endpoint="/predict", nivel_riesgo=nivel_riesgo).inc()
+    if es_fraude:
+        FRAUDES_DETECTADOS_TOTAL.inc()
+
     return ResultadoPrediccion(
         es_fraude=es_fraude,
         probabilidad_fraude=round(prob_fraude, 6),
@@ -391,6 +417,10 @@ async def predecir_fraude_batch(solicitud: SolicitudBatch):
         tiempo_inferencia_ms=round(tiempo_total_ms, 3),
         lote_size=len(resultados),
     )
+
+    PREDICCIONES_TOTAL.labels(endpoint="/predict/batch", nivel_riesgo=calcular_nivel_riesgo(max_prob_lote)).inc(len(resultados))
+    if total_fraudes > 0:
+        FRAUDES_DETECTADOS_TOTAL.inc(total_fraudes)
 
     return ResultadoBatch(
         total_transacciones=len(resultados),

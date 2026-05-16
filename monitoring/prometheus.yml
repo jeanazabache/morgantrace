@@ -1,0 +1,17 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# MorganTrace — Configuración de Prometheus
+# Autor: Jean Pierre Azabache
+#
+# Prometheus recolecta métricas de la API cada 15 segundos.
+# Acceder en: http://localhost:9090
+# ─────────────────────────────────────────────────────────────────────────────
+
+global:
+  scrape_interval: 15s       # Con qué frecuencia recolectar métricas
+  evaluation_interval: 15s   # Con qué frecuencia evaluar reglas de alerta
+
+scrape_configs:
+  - job_name: "morgantrace-api"
+    static_configs:
+      - targets: ["morgantrace-api:8000"]
+    metrics_path: "/metrics"

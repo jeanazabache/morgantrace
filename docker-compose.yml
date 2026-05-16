@@ -2,6 +2,12 @@
 # MorganTrace — Docker Compose
 # Orquestación local para desarrollo y pruebas
 # Autor: Jean Pierre Azabache
+#
+# Servicios:
+#   morgantrace-api  → http://localhost:8000  (API + Swagger en /docs)
+#   mlflow           → http://localhost:5000  (tracking de experimentos ML)
+#   prometheus       → http://localhost:9090  (recolección de métricas)
+#   grafana          → http://localhost:3000  (dashboards — admin/admin)
 # ─────────────────────────────────────────────────────────────────────────────
 services:
   morgantrace-api:
@@ -42,8 +48,45 @@ services:
       - mlflow_data:/mlflow
     restart: unless-stopped
 
+  prometheus:
+    image: prom/prometheus:v2.51.2
+    container_name: morgantrace-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=7d"
+    depends_on:
+      - morgantrace-api
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: morgantrace-grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/morgantrace.json
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
 volumes:
   mlflow_data:
     driver: local
-  audit_logs:       # logs de auditoría sobreviven reinicios del contenedor
+  audit_logs:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
     driver: local
