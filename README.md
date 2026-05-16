@@ -4,6 +4,7 @@
 
 ### Detección de Fraude Financiero Electrónico en Tiempo Real
 
+[![CI](https://github.com/jeanazabache/morgantrace/actions/workflows/ci.yml/badge.svg)](https://github.com/jeanazabache/morgantrace/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688?logo=fastapi)](https://fastapi.tiangolo.com)
 [![XGBoost](https://img.shields.io/badge/XGBoost-2.0-orange)](https://xgboost.readthedocs.io)
