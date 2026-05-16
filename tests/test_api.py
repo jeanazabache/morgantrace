@@ -9,7 +9,6 @@ Ejecutar con: pytest tests/ -v
 """
 
 import json
-import os
 import pytest
 from pathlib import Path
 from fastapi.testclient import TestClient

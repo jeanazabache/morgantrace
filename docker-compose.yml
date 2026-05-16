@@ -3,8 +3,6 @@
 # Orquestación local para desarrollo y pruebas
 # Autor: Jean Pierre Azabache
 # ─────────────────────────────────────────────────────────────────────────────
-version: "3.9"
-
 services:
   morgantrace-api:
     build:
@@ -14,9 +12,11 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./src/models:/app/src/models
+      - ./src/models:/app/src/models   # modelo entrenado (no se sube a git)
+      - audit_logs:/app/logs           # logs de auditoría persistentes
     environment:
       - MODEL_PATH=src/models/model.pkl
+      - AUDIT_LOG_PATH=logs/predicciones.jsonl
       - PYTHONUNBUFFERED=1
     restart: unless-stopped
     healthcheck:
@@ -44,4 +44,6 @@ services:
 
 volumes:
   mlflow_data:
+    driver: local
+  audit_logs:       # logs de auditoría sobreviven reinicios del contenedor
     driver: local
