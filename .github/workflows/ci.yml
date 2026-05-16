@@ -1,0 +1,46 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# MorganTrace — Pipeline de Integración Continua (CI)
+# Autor: Jean Pierre Azabache
+#
+# Se ejecuta automáticamente en cada push y pull request a main.
+# Corre los tests de la API para verificar que nada está roto.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: CI — MorganTrace Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Ejecutar tests de la API
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Obtener el código del repositorio
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      # 2. Configurar Python 3.11 (misma versión que usa el proyecto)
+      - name: Configurar Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: requirements-test.txt
+
+      # 3. Instalar solo las dependencias necesarias para los tests (rápido)
+      - name: Instalar dependencias de test
+        run: pip install -r requirements-test.txt
+
+      # 4. Ejecutar todos los tests con reporte detallado
+      - name: Ejecutar pytest
+        run: pytest tests/ -v --tb=short
+
+      # 5. (Opcional) Mostrar resumen si algún test falla
+      - name: Resumen de resultados
+        if: always()
+        run: echo "✅ Tests completados. Revisar la pestaña Actions para ver el detalle."
