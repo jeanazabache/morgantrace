@@ -4,17 +4,6 @@
 
 ### Sistema de Detección de Fraude Financiero Electrónico en Tiempo Real
 
-[![CI](https://github.com/jeanazabache/morgantrace/actions/workflows/ci.yml/badge.svg)](https://github.com/jeanazabache/morgantrace/actions/workflows/ci.yml)
-[![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python)](https://python.org)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688?logo=fastapi)](https://fastapi.tiangolo.com)
-[![XGBoost](https://img.shields.io/badge/XGBoost-2.0-orange)](https://xgboost.readthedocs.io)
-[![LightGBM](https://img.shields.io/badge/LightGBM-4.3-green)](https://lightgbm.readthedocs.io)
-[![MLflow](https://img.shields.io/badge/MLflow-2.12-blue)](https://mlflow.org)
-[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker)](https://docker.com)
-[![Kubernetes](https://img.shields.io/badge/Kubernetes-k3d-326CE5?logo=kubernetes)](https://k3d.io)
-[![Prometheus](https://img.shields.io/badge/Prometheus-2.51-E6522C?logo=prometheus)](https://prometheus.io)
-[![Grafana](https://img.shields.io/badge/Grafana-10.4-F46800?logo=grafana)](https://grafana.com)
-
 **Autor:** Jean Pierre Azabache · [github.com/jeanazabache](https://github.com/jeanazabache)
 
 </div>
