@@ -1,10 +1,10 @@
 <div align="center">
 
-# MorganTrace
+## MorganTrace
 
 ### Sistema de Detección de Fraude Financiero Electrónico en Tiempo Real
 
-**Autor:** Jean Pierre Azabache · [github.com/jeanazabache](https://github.com/jeanazabache)
+**Autor:** Jean Pierre Azabache
 
 </div>
 
